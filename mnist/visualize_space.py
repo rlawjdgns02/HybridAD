@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.rc('font', family='AppleGothic')
+matplotlib.rc('font', family='Malgun Gothic')
 matplotlib.rcParams['axes.unicode_minus'] = False
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
