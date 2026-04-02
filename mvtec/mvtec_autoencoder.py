@@ -31,7 +31,86 @@ LR           = 1e-4
 IMG_SIZE     = 224  # ResNet 입력 크기
 DATA_DIR     = "./data/mvtec_anomaly_detection"
 SAVE_DIR     = "./preprocessed/mvtec"
-DEVICE       = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    DEVICE = torch.device("mps")
+else:
+    DEVICE = torch.device("cpu")
+
+# "mse" | "ssim" | "perceptual" | "ssim+mse"
+LOSS_TYPE    = "ssim+mse"
+
+
+# ── Loss Functions ────────────────────────────────────────────────────────────
+class SSIMLoss(nn.Module):
+    """구조적 유사도 기반 loss. 엣지/텍스처 보존에 유리."""
+    def __init__(self, window_size=11):
+        super().__init__()
+        self.window_size = window_size
+        self.register_buffer("window", self._gaussian_window(window_size))
+
+    def _gaussian_window(self, size, sigma=1.5):
+        coords = torch.arange(size, dtype=torch.float32) - size // 2
+        g = torch.exp(-(coords ** 2) / (2 * sigma ** 2))
+        g /= g.sum()
+        return g.outer(g).unsqueeze(0).unsqueeze(0)  # (1,1,W,W)
+
+    def _ssim(self, x, y):
+        C1, C2 = 0.01 ** 2, 0.03 ** 2
+        w = self.window.expand(x.size(1), 1, -1, -1)
+
+        mu_x  = nn.functional.conv2d(x, w, padding=self.window_size//2, groups=x.size(1))
+        mu_y  = nn.functional.conv2d(y, w, padding=self.window_size//2, groups=x.size(1))
+        mu_xx = mu_x ** 2
+        mu_yy = mu_y ** 2
+        mu_xy = mu_x * mu_y
+
+        sig_xx = nn.functional.conv2d(x*x, w, padding=self.window_size//2, groups=x.size(1)) - mu_xx
+        sig_yy = nn.functional.conv2d(y*y, w, padding=self.window_size//2, groups=x.size(1)) - mu_yy
+        sig_xy = nn.functional.conv2d(x*y, w, padding=self.window_size//2, groups=x.size(1)) - mu_xy
+
+        num = (2*mu_xy + C1) * (2*sig_xy + C2)
+        den = (mu_xx + mu_yy + C1) * (sig_xx + sig_yy + C2)
+        return (num / den).mean()
+
+    def forward(self, recon, target):
+        return 1 - self._ssim(recon, target)
+
+
+class PerceptualLoss(nn.Module):
+    """VGG16 중간 feature 비교. 픽셀이 아닌 '의미적 유사도'로 학습."""
+    def __init__(self):
+        super().__init__()
+        vgg = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_V1)
+        # relu2_2(idx 9), relu3_3(idx 16) feature 사용
+        self.slice1 = nn.Sequential(*list(vgg.features)[:10]).eval()
+        self.slice2 = nn.Sequential(*list(vgg.features)[10:17]).eval()
+        for p in self.parameters():
+            p.requires_grad = False
+
+    def forward(self, recon, target):
+        f1_r, f1_t = self.slice1(recon), self.slice1(target)
+        f2_r, f2_t = self.slice2(f1_r),  self.slice2(f1_t)
+        return nn.functional.mse_loss(f1_r, f1_t) + nn.functional.mse_loss(f2_r, f2_t)
+
+
+def build_loss_fn(loss_type=LOSS_TYPE):
+    """LOSS_TYPE에 따라 loss 함수 반환."""
+    mse  = nn.MSELoss()
+    ssim = SSIMLoss().to(DEVICE)
+    perc = PerceptualLoss().to(DEVICE) if "perceptual" in loss_type else None
+
+    if loss_type == "mse":
+        return lambda r, t: mse(r, t)
+    elif loss_type == "ssim":
+        return lambda r, t: ssim(r, t)
+    elif loss_type == "ssim+mse":
+        return lambda r, t: 0.8 * ssim(r, t) + 0.2 * mse(r, t)
+    elif loss_type == "perceptual":
+        return lambda r, t: perc(r, t)
+    else:
+        raise ValueError(f"Unknown LOSS_TYPE: {loss_type}")
 
 
 # ── 1. 데이터셋 클래스 ─────────────────────────────────────────────────────────
@@ -104,20 +183,22 @@ class ResNetAutoencoder(nn.Module):
         )
 
         # Decoder: 7x7에서 시작하여 224x224로 업샘플링
+        # Upsample+Conv 방식 → ConvTranspose2d의 체커보드 아티팩트 방지
+        def up_block(in_ch, out_ch):
+            return nn.Sequential(
+                nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+                nn.Conv2d(in_ch, out_ch, 3, padding=1),
+                nn.BatchNorm2d(out_ch),
+                nn.ReLU(),
+            )
+
         self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(latent_channels, 256, 4, stride=2, padding=1),  # 14x14
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.ConvTranspose2d(256, 128, 4, stride=2, padding=1),  # 28x28
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),   # 56x56
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 32, 4, stride=2, padding=1),    # 112x112
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.ConvTranspose2d(32, 3, 4, stride=2, padding=1),     # 224x224
+            up_block(latent_channels, 256),  # 14x14
+            up_block(256, 128),              # 28x28
+            up_block(128, 64),               # 56x56
+            up_block(64, 32),                # 112x112
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
+            nn.Conv2d(32, 3, 3, padding=1),  # 224x224
         )
 
     def _freeze_backbone(self, freeze=True):
@@ -143,9 +224,10 @@ class ResNetAutoencoder(nn.Module):
 
 # ── 3. 학습 ───────────────────────────────────────────────────────────────────
 def train_autoencoder(model, train_dataset, epochs=EPOCHS, lr=LR):
-    loader    = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
-    criterion = nn.MSELoss()
+    loader    = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, persistent_workers=True)
+    criterion = build_loss_fn(LOSS_TYPE)
     loss_history = []
+    print(f"[Loss] Using: {LOSS_TYPE}")
 
     # 2단계 학습: backbone freeze → unfreeze
     model._freeze_backbone(freeze=True)
@@ -182,7 +264,7 @@ def train_autoencoder(model, train_dataset, epochs=EPOCHS, lr=LR):
 # ── 4. Latent 추출 ────────────────────────────────────────────────────────────
 def extract_latents(model, dataset):
     """VQC 입력용 1D latent vector 추출 (7x7xC → flatten)"""
-    loader = DataLoader(dataset, batch_size=64, shuffle=False, num_workers=0)
+    loader = DataLoader(dataset, batch_size=64, shuffle=False, num_workers=4, persistent_workers=True)
     model.eval()
     latents, labels = [], []
 
