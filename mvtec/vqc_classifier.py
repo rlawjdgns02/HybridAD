@@ -24,7 +24,18 @@ import matplotlib.pyplot as plt
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
-CATEGORY     = "bottle"
+import argparse
+import matplotlib
+parser = argparse.ArgumentParser()
+parser.add_argument("--category", type=str, default="bottle", help="MVTec category")
+parser.add_argument("--visualize", action="store_true", help="Load saved model and visualize only")
+parser.add_argument("--no-show", action="store_true", help="Don't display plots (for automation)")
+args, _ = parser.parse_known_args()
+
+if args.no_show:
+    matplotlib.use('Agg')
+
+CATEGORY     = args.category
 N_QUBITS     = 8
 N_LAYERS     = 4        # Variational layer 반복 횟수
 BATCH_SIZE   = 32
@@ -312,7 +323,8 @@ def visualize_space(model, train_x, test_x, test_y, save_dir, center=CENTER):
 
     plt.tight_layout()
     plt.savefig(f"{save_dir}/vqc_space_visualization.png", dpi=150)
-    plt.show()
+    if not args.no_show:
+        plt.show()
     print(f"[Saved] {save_dir}/vqc_space_visualization.png")
 
     # 통계 출력
@@ -375,7 +387,8 @@ def plot_results(history, results, test_y, save_dir, center=CENTER):
 
     plt.tight_layout()
     plt.savefig(f"{save_dir}/vqc_svdd_results.png", dpi=150)
-    plt.show()
+    if not args.no_show:
+        plt.show()
     print(f"[Saved] {save_dir}/vqc_svdd_results.png")
 
 
@@ -413,12 +426,10 @@ def load_and_visualize(model_path=None):
 
 
 if __name__ == "__main__":
-    import sys
-
     # --visualize 옵션: 저장된 모델로 시각화만
-    if len(sys.argv) > 1 and sys.argv[1] == "--visualize":
+    if args.visualize:
         load_and_visualize()
-        sys.exit(0)
+        exit(0)
 
     print(f"Device: {DEVICE}")
     print(f"Category: {CATEGORY}")

@@ -1,0 +1,110 @@
+[
+  {
+    "category": "carpet",
+    "timestamp": "2026-04-05T15:05:48.759793",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  },
+  {
+    "category": "grid",
+    "timestamp": "2026-04-05T15:09:06.268401",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  },
+  {
+    "category": "hazelnut",
+    "timestamp": "2026-04-05T15:11:07.813711",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  },
+  {
+    "category": "leather",
+    "timestamp": "2026-04-05T15:14:38.431371",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  },
+  {
+    "category": "metal_nut",
+    "timestamp": "2026-04-05T15:17:12.974680",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  },
+  {
+    "category": "pill",
+    "timestamp": "2026-04-05T15:19:04.642930",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  },
+  {
+    "category": "screw",
+    "timestamp": "2026-04-05T15:21:32.049423",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  },
+  {
+    "category": "tile",
+    "timestamp": "2026-04-05T15:24:02.119123",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  },
+  {
+    "category": "toothbrush",
+    "timestamp": "2026-04-05T15:26:21.568370",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  },
+  {
+    "category": "transistor",
+    "timestamp": "2026-04-05T15:27:44.012562",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  },
+  {
+    "category": "wood",
+    "timestamp": "2026-04-05T15:30:34.101505",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  },
+  {
+    "category": "zipper",
+    "timestamp": "2026-04-05T15:33:26.401676",
+    "ae_trained": true,
+    "visualized": false,
+    "recon_analyzed": false,
+    "vqc_trained": false,
+    "error": null
+  }
+]

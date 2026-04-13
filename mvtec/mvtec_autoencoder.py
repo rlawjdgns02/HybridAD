@@ -22,8 +22,13 @@ from pathlib import Path
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
-CATEGORY     = "bottle"  # 변경 가능: bottle, cable, capsule, etc.
-LATENT_DIM   = 256       # bottleneck 채널 수 (latent shape: 7x7xLATENT_DIM)
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--category", type=str, default="carpet", help="MVTec category")
+args, _ = parser.parse_known_args()
+
+CATEGORY     = args.category  # 변경 가능: bottle, cable, capsule, etc.
+LATENT_DIM   = 16       # bottleneck 채널 수 (latent shape: 7x7xLATENT_DIM)
 N_QUBITS     = 8
 BATCH_SIZE   = 32
 EPOCHS       = 50
@@ -193,8 +198,8 @@ class ResNetAutoencoder(nn.Module):
             )
 
         self.decoder = nn.Sequential(
-            up_block(latent_channels, 256),  # 14x14
-            up_block(256, 128),              # 28x28
+            up_block(latent_channels, 64),  # 14x14
+            up_block(64, 128),              # 28x28
             up_block(128, 64),               # 56x56
             up_block(64, 32),                # 112x112
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False),
@@ -230,18 +235,22 @@ def train_autoencoder(model, train_dataset, epochs=EPOCHS, lr=LR):
     print(f"[Loss] Using: {LOSS_TYPE}")
 
     # 2단계 학습: backbone freeze → unfreeze
-    model._freeze_backbone(freeze=True)
-    optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
+    model._freeze_backbone(freeze=False)
+    optimizer = optim.Adam([
+        {"params": model.backbone.parameters(),   "lr": lr * 0.1},
+        {"params": model.bottleneck.parameters(), "lr": lr},
+        {"params": model.decoder.parameters(),    "lr": lr},
+    ])
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.5)
 
     model.train()
     for epoch in range(1, epochs + 1):
         # epoch 절반 지나면 backbone unfreeze
-        if epoch == epochs // 2:
-            print("[Model] Unfreezing backbone for fine-tuning...")
-            model._freeze_backbone(freeze=False)
-            optimizer = optim.Adam(model.parameters(), lr=lr * 0.1)
-            scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+        # if epoch == epochs // 2:
+        #     print("[Model] Unfreezing backbone for fine-tuning...")
+        #     model._freeze_backbone(freeze=False)
+        #     optimizer = optim.Adam(model.parameters(), lr=lr * 0.1)
+        #     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
         total = 0.0
         for x, _ in loader:

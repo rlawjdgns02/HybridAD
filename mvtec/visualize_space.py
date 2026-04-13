@@ -1,12 +1,21 @@
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.rc('font', family='AppleGothic')
+matplotlib.rc('font', family='Malgun Gothic')
 matplotlib.rcParams['axes.unicode_minus'] = False
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
+import argparse
 
-CATEGORY = "bottle"
+parser = argparse.ArgumentParser()
+parser.add_argument("--category", type=str, default="bottle", help="MVTec category")
+parser.add_argument("--no-show", action="store_true", help="Don't display plots (for automation)")
+args, _ = parser.parse_known_args()
+
+if args.no_show:
+    matplotlib.use('Agg')  # Non-interactive backend
+
+CATEGORY = args.category
 SAVE_DIR  = f"./preprocessed/mvtec/{CATEGORY}"
 
 # 저장된 파일 로딩
@@ -31,7 +40,8 @@ plt.title(f"PCA: Latent Space ({CATEGORY})")
 plt.legend()
 plt.tight_layout()
 plt.savefig(f"{SAVE_DIR}/pca_latent.png")
-plt.show()
+if not args.no_show:
+    plt.show()
 print("[Saved] pca_latent.png")
 
 # ── t-SNE 시각화 ───────────────────────────────────────────────
@@ -50,5 +60,6 @@ plt.title(f"t-SNE: Latent Space ({CATEGORY})")
 plt.legend()
 plt.tight_layout()
 plt.savefig(f"{SAVE_DIR}/tsne_latent.png")
-plt.show()
+if not args.no_show:
+    plt.show()
 print("[Saved] tsne_latent.png")

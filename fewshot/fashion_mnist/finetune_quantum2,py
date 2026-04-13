@@ -1,0 +1,248 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, Subset
+from torchvision import datasets, transforms
+import random
+import matplotlib.pyplot as plt
+import os
+import copy
+
+import pennylane as qml
+
+# =========================
+# CONFIG
+# =========================
+N_SHOT = 20
+SEED = 42
+EPOCHS = 50
+
+random.seed(SEED)
+torch.manual_seed(SEED)
+
+# =========================
+# 1. DATA (FashionMNIST 8, 9 classes only)
+# =========================
+transform = transforms.ToTensor()
+
+train_dataset = datasets.FashionMNIST(root="./data", train=True, download=True, transform=transform)
+test_dataset  = datasets.FashionMNIST(root="./data", train=False, download=True, transform=transform)
+
+def filter_finetune_classes(dataset):
+    idx = [i for i, (_, y) in enumerate(dataset) if y in [8, 9]]
+    return Subset(dataset, idx)
+
+def filter_fewshot(dataset, n_shot, seed=42):
+    random.seed(seed)
+    class_indices = {8: [], 9: []}
+    for i, (_, y) in enumerate(dataset):
+        if y in [8, 9]:
+            class_indices[y].append(i)
+    selected = []
+    for cls in [8, 9]:
+        selected += random.sample(class_indices[cls], min(n_shot, len(class_indices[cls])))
+    return Subset(dataset, selected)
+
+train_dataset = filter_fewshot(train_dataset, N_SHOT, SEED)
+test_dataset  = filter_finetune_classes(test_dataset)
+
+print(f"Fine-tune setting: {N_SHOT}-shot (train: {len(train_dataset)}, test: {len(test_dataset)})")
+
+batch_size   = len(train_dataset)
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+test_loader  = DataLoader(test_dataset,  batch_size=32)
+
+# =========================
+# 2. CNN (pretrained, frozen)
+# =========================
+class CNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 16, 3)
+        self.conv2 = nn.Conv2d(16, 32, 3)
+        self.pool  = nn.MaxPool2d(2)
+        self.fc    = nn.Linear(32 * 5 * 5, 4)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = x.view(x.size(0), -1)
+        x = self.fc(x)
+        return torch.tanh(x)  # [-1, 1] → angle encoding 범위에 적합
+
+
+# =========================
+# 3. QUANTUM CIRCUIT (probs 방식)
+# =========================
+n_qubits = 4
+n_layers = 3
+dev = qml.device("lightning.qubit", wires=n_qubits)
+
+@qml.qnode(dev, interface="torch")
+def qnode(inputs, weights):
+    qml.AngleEmbedding(inputs, wires=range(n_qubits), rotation='X')
+
+    for layer in range(n_layers):
+        for i in range(n_qubits):
+            qml.CNOT(wires=[i, (i + 1) % n_qubits])
+        for i in range(n_qubits):
+            qml.RY(weights[layer, i, 0], wires=i)
+            qml.RZ(weights[layer, i, 1], wires=i)
+
+    return qml.probs(wires=range(n_qubits))  # 2^4 = 16차원 확률값
+
+weight_shapes = {"weights": (n_layers, n_qubits, 2)}
+qlayer = qml.qnn.TorchLayer(qnode, weight_shapes)
+
+
+# =========================
+# 4. HYBRID MODEL (fc 제거)
+# =========================
+class HybridModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.cnn = CNN()
+        self.qnn = qlayer
+
+    def to(self, device):
+        self.cnn = self.cnn.to(device)
+        return self
+
+    def forward(self, x):
+        original_device = x.device
+        x = self.cnn(x)            # (batch, 4)
+        x = x.cpu()
+        x = self.qnn(x)            # (batch, 16) 확률값
+
+        # 첫 번째 qubit 기준으로 2개 클래스 확률 합산
+        # |0xxx⟩ 상태 합산 → class 0 확률
+        # |1xxx⟩ 상태 합산 → class 1 확률
+        p0 = x[:, :8].sum(dim=1, keepdim=True)   # (batch, 1)
+        p1 = x[:, 8:].sum(dim=1, keepdim=True)   # (batch, 1)
+        out = torch.cat([p0, p1], dim=1)          # (batch, 2)
+
+        return out.to(original_device)
+
+
+# =========================
+# 5. LOAD PRETRAINED & FREEZE CNN
+# =========================
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Device: {device}")
+
+model = HybridModel().to(device)
+
+model.cnn.load_state_dict(torch.load("cnn_pretrained.pth", map_location=device))
+print("Loaded pretrained CNN weights")
+
+for param in model.cnn.parameters():
+    param.requires_grad = False
+print("CNN frozen - only training QNN")
+
+
+# =========================
+# 6. TRAIN (QNN only)
+# =========================
+trainable_params = list(model.qnn.parameters())
+opt     = torch.optim.Adam(trainable_params, lr=0.01)
+# probs 출력이므로 NLLLoss 사용 (log 취한 확률을 입력으로 받음)
+loss_fn = nn.NLLLoss()
+
+history = {"loss": [], "acc": []}
+
+best_acc   = 0
+best_state = None
+best_epoch = 0
+patience   = 50
+no_improve = 0
+
+for epoch in range(EPOCHS):
+    model.train()
+    total_loss = 0
+
+    for x, y in train_loader:
+        x, y = x.to(device), y.to(device)
+        y = y - 8  # 8 → 0, 9 → 1
+
+        opt.zero_grad()
+        out  = model(x)                          # (batch, 2) 확률값
+        loss = loss_fn(torch.log(out + 1e-8), y) # NLLLoss는 log 확률 입력
+        loss.backward()
+        opt.step()
+
+        total_loss += loss.item()
+
+    avg_loss = total_loss / len(train_loader)
+    history["loss"].append(avg_loss)
+
+    # Evaluation
+    model.eval()
+    correct, total = 0, 0
+    with torch.no_grad():
+        for x, y in test_loader:
+            x, y = x.to(device), y.to(device)
+            y    = y - 8
+            pred = model(x).argmax(dim=1)
+            correct += (pred == y).sum().item()
+            total   += y.size(0)
+
+    acc = correct / total
+    history["acc"].append(acc)
+
+    if acc > best_acc:
+        best_acc   = acc
+        best_state = copy.deepcopy(model.state_dict())
+        best_epoch = epoch + 1
+        no_improve = 0
+    else:
+        no_improve += 1
+
+    if (epoch + 1) % 10 == 0:
+        print(f"Epoch {epoch+1}/{EPOCHS} - Loss: {avg_loss:.4f}, Acc: {acc:.4f} "
+              f"(best: {best_acc:.4f} @ ep{best_epoch})")
+
+    if no_improve >= patience:
+        print(f"Early stopping at epoch {epoch+1}")
+        break
+
+model.load_state_dict(best_state)
+print(f"Restored best model from epoch {best_epoch} (acc: {best_acc:.4f})")
+
+# =========================
+# 7. FINAL RESULT
+# =========================
+print(f"\n[Quantum-probs] {N_SHOT}-shot Best Accuracy: {best_acc:.4f} (epoch {best_epoch})")
+
+# =========================
+# 8. SAVE
+# =========================
+os.makedirs("results", exist_ok=True)
+
+torch.save({
+    "model_state_dict": model.state_dict(),
+    "n_shot":           N_SHOT,
+    "best_acc":         best_acc,
+    "best_epoch":       best_epoch,
+    "history":          history
+}, f"results/quantum_probs_{N_SHOT}shot.pth")
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+axes[0].plot(history["loss"], color="red", label="Loss")
+axes[0].set_xlabel("Epoch")
+axes[0].set_ylabel("Loss")
+axes[0].set_title(f"Quantum-probs {N_SHOT}-shot: Loss")
+axes[0].legend()
+axes[0].grid(True)
+
+axes[1].plot(history["acc"], color="orange", label="Accuracy")
+axes[1].set_xlabel("Epoch")
+axes[1].set_ylabel("Accuracy")
+axes[1].set_title(f"Quantum-probs {N_SHOT}-shot: Accuracy (best: {best_acc:.4f} @ ep{best_epoch})")
+axes[1].legend()
+axes[1].grid(True)
+
+plt.tight_layout()
+plt.savefig(f"results/quantum_probs_{N_SHOT}shot.png", dpi=150)
+plt.show()
+print(f"Saved: results/quantum_probs_{N_SHOT}shot.png")

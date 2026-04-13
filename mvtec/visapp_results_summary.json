@@ -1,0 +1,92 @@
+[
+  {
+    "category": "bottle",
+    "timestamp": "2026-04-04T17:16:57.986770",
+    "success": true,
+    "recon_auc": 0.8134920634920635
+  },
+  {
+    "category": "cable",
+    "timestamp": "2026-04-04T17:21:38.958091",
+    "success": true,
+    "recon_auc": 0.7048350824587708
+  },
+  {
+    "category": "capsule",
+    "timestamp": "2026-04-04T17:28:49.590276",
+    "success": true,
+    "recon_auc": 0.6326286398085362
+  },
+  {
+    "category": "carpet",
+    "timestamp": "2026-04-04T17:35:17.384073",
+    "success": true,
+    "recon_auc": 0.35152487961476725
+  },
+  {
+    "category": "grid",
+    "timestamp": "2026-04-04T17:43:27.252933",
+    "success": true,
+    "recon_auc": 0.746031746031746
+  },
+  {
+    "category": "hazelnut",
+    "timestamp": "2026-04-04T17:47:29.528815",
+    "success": true,
+    "recon_auc": 0.6814285714285714
+  },
+  {
+    "category": "leather",
+    "timestamp": "2026-04-04T17:57:58.169737",
+    "success": true,
+    "recon_auc": 0.579483695652174
+  },
+  {
+    "category": "metal_nut",
+    "timestamp": "2026-04-04T18:05:55.928321",
+    "success": true,
+    "recon_auc": 0.5835777126099707
+  },
+  {
+    "category": "pill",
+    "timestamp": "2026-04-04T18:10:46.433219",
+    "success": true,
+    "recon_auc": 0.6693944353518823
+  },
+  {
+    "category": "screw",
+    "timestamp": "2026-04-04T18:17:38.013370",
+    "success": true,
+    "recon_auc": 0.9057183849149415
+  },
+  {
+    "category": "tile",
+    "timestamp": "2026-04-04T18:24:49.222472",
+    "success": true,
+    "recon_auc": 0.6150793650793651
+  },
+  {
+    "category": "toothbrush",
+    "timestamp": "2026-04-04T18:31:41.624591",
+    "success": true,
+    "recon_auc": 0.75
+  },
+  {
+    "category": "transistor",
+    "timestamp": "2026-04-04T18:35:58.510430",
+    "success": true,
+    "recon_auc": 0.6887500000000001
+  },
+  {
+    "category": "wood",
+    "timestamp": "2026-04-04T18:44:57.042777",
+    "success": true,
+    "recon_auc": 0.9070175438596492
+  },
+  {
+    "category": "zipper",
+    "timestamp": "2026-04-04T18:53:58.938556",
+    "success": true,
+    "recon_auc": 0.601890756302521
+  }
+]
