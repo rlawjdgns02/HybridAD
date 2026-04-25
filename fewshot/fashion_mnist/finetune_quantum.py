@@ -12,7 +12,7 @@ import pennylane as qml
 # =========================
 # CONFIG
 # =========================
-N_SHOT = 20  # 클래스당 샘플 수 (1, 3, 5, 10, ...)
+N_SHOT = 5  # 클래스당 샘플 수 (1, 3, 5, 10, ...)
 SEED = 42
 EPOCHS = 50
 
@@ -99,8 +99,8 @@ def qnode(inputs, weights):
             qml.RY(weights[layer, i, 0], wires=i)
             qml.RZ(weights[layer, i, 1], wires=i)
 
-    # 모든 qubit의 expectation value 반환 (4차원 출력)
-    return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
+    # 첫 2큐빗의 측정 확률 반환 → 2^2 = 4차원 출력 (fc 입력 차원과 일치)
+    return qml.probs(wires=[0, 1])
 
 # 3층 × 4큐빗 × 2회전 = 24 파라미터 (기존 4개에서 증가)
 weight_shapes = {"weights": (n_layers, n_qubits, 2)}
@@ -114,7 +114,7 @@ class HybridModel(nn.Module):
         super().__init__()
         self.cnn = CNN()
         self.qnn = qlayer
-        self.fc = nn.Linear(n_qubits, 2)  # 2 classes
+        self.fc = nn.Linear(4, 2) #2 classes
 
     def to(self, device):
         self.cnn = self.cnn.to(device)
@@ -165,7 +165,7 @@ import copy
 best_acc = 0
 best_state = None
 best_epoch = 0
-patience = 50  # 5 epoch 동안 개선 없으면 중단
+patience = 1  # 5 epoch 동안 개선 없으면 중단
 no_improve = 0
 
 for epoch in range(EPOCHS):
