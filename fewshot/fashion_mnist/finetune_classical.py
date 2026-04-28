@@ -12,7 +12,7 @@ import os
 # =========================
 N_SHOT = 20  # 클래스당 샘플 수 (1, 3, 5, 10, ...)
 SEED = 42
-EPOCHS = 50
+EPOCHS = 20
 
 random.seed(SEED)
 torch.manual_seed(SEED)
@@ -81,7 +81,12 @@ class ClassicalModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.cnn = CNN()
-        self.classifier = nn.Linear(4, 2)  # 2 classes (8, 9 -> 0, 1)
+        # MLP classifier (비선형성 추가, QNN과 공정한 비교)
+        self.classifier = nn.Sequential(
+            nn.Linear(4, 5),   # 4×8+8 = 40 params
+            nn.ReLU(),
+            nn.Linear(5, 2)    # 8×2+2 = 18 params → 총 58개
+        )
 
     def forward(self, x):
         x = self.cnn(x)

@@ -12,9 +12,9 @@ import pennylane as qml
 # =========================
 # CONFIG
 # =========================
-N_SHOT = 5  # 클래스당 샘플 수 (1, 3, 5, 10, ...)
+N_SHOT = 20  # 클래스당 샘플 수 (1, 3, 5, 10, ...)
 SEED = 42
-EPOCHS = 50
+EPOCHS = 20
 
 random.seed(SEED)
 torch.manual_seed(SEED)
@@ -165,7 +165,7 @@ import copy
 best_acc = 0
 best_state = None
 best_epoch = 0
-patience = 1  # 5 epoch 동안 개선 없으면 중단
+patience = 15  # 5 epoch 동안 개선 없으면 중단
 no_improve = 0
 
 for epoch in range(EPOCHS):
